@@ -1,0 +1,4 @@
+samAccountName,displayName,mail,givenName,surname,enabled,lastLogonDate,whenCreated,distinguishedName
+{% for user in final_result.users %}
+"{{ user.samAccountName | default(user.uid, true) }}","{{ user.displayName | default('', true) }}","{{ user.mail | default('', true) }}","{{ user.givenName | default('', true) }}","{{ user.surname | default(user.sn, true) | default('', true) }}","{{ user.enabled | default('unknown', true) }}","{{ user.lastLogonDate | default('', true) }}","{{ user.whenCreated | default(user.createTimestamp, true) | default('', true) }}","{{ user.distinguishedName | default('', true) }}"
+{% endfor %}
