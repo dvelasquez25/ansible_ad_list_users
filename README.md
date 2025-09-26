@@ -1,222 +1,278 @@
-# List User Accounts Ansible Playbook for Tower/AWX
+# Ansible Active Directory User Listing - Microsoft AD Collection
 
-This playbook queries user accounts from Active Directory (Windows) or LDAP (Linux) systems and provides flexible filtering and output options. It's optimized for Ansible Tower/AWX deployment.
+This Ansible playbook queries Active Directory to list users using the official Microsoft AD collection. It accepts all parameters via command line and includes a configurable limit for the number of users returned.
 
-## 🎯 Features
+## Features
 
-- **Multi-platform support**: Works with Windows Active Directory and Linux LDAP
-- **Tower/AWX optimized**: Uses `hosts: all,!localhost` pattern with limit functionality
-- **Flexible filtering**: Filter by username patterns, organizational units, and account status
-- **Multiple output formats**: JSON and CSV output options
-- **Group membership**: Optional inclusion of group memberships
-- **Variable validation**: Ensures required variables are provided
-- **Error handling**: Comprehensive error handling and reporting
+- Uses official Microsoft AD collection for better reliability
+- List Active Directory users with customizable limits
+- Multiple output formats (table, JSON, detailed, CSV export)
+- Flexible user name filtering
+- Command-line parameter support
+- Security best practices with Ansible Vault support
+- Comprehensive error handling and validation
 
-## 📋 Requirements
+## Prerequisites
 
-### Ansible Collections
-Install required collections in Tower/AWX:
+1. **Ansible**: Version 2.15 or higher (required for Microsoft AD collection)
+2. **Collections**: Microsoft AD collection and Ansible Windows collection
+3. **Network access**: Your Ansible control node must have access to the AD server
+4. **AD credentials**: Valid Active Directory user account with read permissions
+
+## Installation
+
+1. Clone or download this repository:
+   ```bash
+   git clone <repository-url>
+   cd ansible_ad_list_users
+   ```
+
+2. Install required Ansible collections:
+   ```bash
+   ansible-galaxy collection install -r requirements.yml
+   ```
+
+   Or manually:
+   ```bash
+   ansible-galaxy collection install microsoft.ad
+   ansible-galaxy collection install ansible.windows
+   ```
+
+## Usage
+
+### Basic Usage
+
 ```bash
-ansible-galaxy collection install -r requirements.yml
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e user_limit=50
 ```
 
-### Target Systems
+### Parameters
 
-#### Windows Targets (Active Directory)
-- PowerShell 5.0 or later
-- Active Directory PowerShell module
-- WinRM configured and accessible
-- Service account with read permissions to Active Directory
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `ad_server` | Yes | - | Active Directory server hostname or IP |
+| `ad_domain` | Yes | - | Active Directory domain (e.g., example.com) |
+| `ad_username` | Yes | - | Username for AD authentication |
+| `ad_password` | Yes | - | Password for AD authentication |
+| `user_limit` | No | 100 | Maximum number of users to return |
+| `output_format` | No | table | Output format: table, json, detailed, csv |
+| `search_base` | No | Domain root | Custom LDAP search base DN |
+| `user_filter` | No | * | User name filter pattern (wildcards supported) |
 
-#### Linux Targets (LDAP)
-- Python 3.x
-- python-ldap package
-- Network access to LDAP server
-- Service account with read permissions to LDAP directory
+### Output Formats
 
-## � Required Variables
-
-These variables **MUST** be provided via Tower/AWX job template extra_vars or survey:
-
-| Variable | Type | Description | Example |
-|----------|------|-------------|---------|
-| `action` | string | Operation to perform | `"list_accounts"` |
-| `search_filter` | string | Username pattern filter | `"john*"` or `"*"` |
-| `account_status_filter` | string | Account status filter | `"enabled"`, `"disabled"`, `"locked"`, `"all"` |
-| `operation_timestamp` | string | Timestamp for this operation | `"2025-09-25T10:30:00Z"` |
-| `requested_by` | string | Who/what initiated this request | `"ansible_agent"` |
-
-## 🎛️ Optional Variables
-
-| Variable | Type | Default | Description |
-|----------|------|---------|-------------|
-| `organizational_unit` | string | `""` | Specific OU to search within |
-| `output_format` | string | `"json"` | Output format: `"json"` or `"csv"` |
-| `include_groups` | boolean | `false` | Include user group memberships |
-| `max_results` | integer | `1000` | Maximum number of results to return |
-| `include_attributes` | list | See playbook | User attributes to retrieve |
-
-## 🚀 Tower/AWX Setup
-
-### 1. Import Project
-1. Create or use existing project in Tower/AWX
-2. Point to repository containing this playbook
-3. Sync the project
-
-### 2. Create Job Template
-```yaml
-Name: "List User Accounts"
-Job Type: "Run"
-Inventory: "Your Domain Controllers/LDAP Servers"
-Project: "Your Project Name"
-Playbook: "list_user_accounts.yml"
-Credentials: "Domain/LDAP Credentials"
+#### Table Format (Default)
+Displays users in a formatted table:
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e output_format='table'
 ```
 
-### 3. Configure Host Patterns & Limits
-- **Host Pattern**: `all,!localhost` (this excludes localhost from execution)
-- **Limit**: Use Tower's limit functionality to target specific hosts
-  - Example: `dc01.company.com,dc02.company.com`
-  - Example: `domain_controllers` (inventory group)
-  - Example: `ldap_servers`
-
-### 4. Extra Variables Configuration
-```yaml
-action: "list_accounts"
-search_filter: "*"
-account_status_filter: "enabled"
-operation_timestamp: "{{ tower_job_launched }}"
-requested_by: "tower_user_{{ tower_user_name }}"
-organizational_unit: "OU=Users,DC=company,DC=com"
-output_format: "json"
-include_groups: false
-max_results: 1000
+#### JSON Format
+Returns structured JSON data:
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e output_format='json'
 ```
 
-### 5. Survey Configuration (Optional)
-Create a survey in Tower/AWX for easier variable input:
-
-```yaml
-Survey Questions:
-1. Search Filter:
-   - Variable Name: search_filter
-   - Question: "Username pattern to search for (* for all)"
-   - Answer Type: Text
-   - Default: "*"
-   
-2. Account Status:
-   - Variable Name: account_status_filter
-   - Question: "Account status filter"
-   - Answer Type: Multiple Choice (Single Select)
-   - Choices: ["all", "enabled", "disabled", "locked"]
-   - Default: "enabled"
-   
-3. Organizational Unit:
-   - Variable Name: organizational_unit
-   - Question: "Organizational Unit (leave blank for all)"
-   - Answer Type: Text
-   - Default: ""
-   
-4. Output Format:
-   - Variable Name: output_format
-   - Question: "Output format"
-   - Answer Type: Multiple Choice (Single Select)
-   - Choices: ["json", "csv"]
-   - Default: "json"
-   
-5. Include Groups:
-   - Variable Name: include_groups
-   - Question: "Include group memberships"
-   - Answer Type: Multiple Choice (Single Select)
-   - Choices: ["true", "false"]
-   - Default: "false"
+#### Detailed Format
+Shows comprehensive information for each user:
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e output_format='detailed' \
+  -e user_limit=10
 ```
 
-## 📊 Output Format
-
-### JSON Output
-```json
-{
-  "accounts": [
-    {
-      "username": "jsmith",
-      "display_name": "John Smith",
-      "email": "jsmith@company.com",
-      "enabled": true,
-      "locked": false,
-      "last_login": "2025-01-10T14:30:00Z",
-      "groups": ["Domain Users", "Developers"]
-    }
-  ],
-  "metadata": {
-    "total_accounts": 1,
-    "filtered_by": "enabled accounts only",
-    "search_filter": "j*",
-    "timestamp": "2025-01-15T10:00:00Z"
-  }
-}
+#### CSV Export
+Creates a timestamped CSV file:
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e output_format='csv'
 ```
 
-### CSV Output
+### Advanced Usage
+
+#### Search Specific Organizational Unit
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e search_base='OU=Employees,DC=example,DC=com'
+```
+
+#### Filter Users by Name Pattern
+```bash
+# Find users starting with "john"
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e user_filter='john*'
+
+# Find users containing "smith"
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e user_filter='*smith*'
+```
+
+## Security Best Practices
+
+### Using Ansible Vault
+
+For production use, store sensitive credentials in an encrypted vault file:
+
+1. Create a vault file:
+   ```bash
+   ansible-vault create ad_secrets.yml
+   ```
+
+2. Add credentials to the vault:
+   ```yaml
+   ad_username: 'administrator'
+   ad_password: 'YourPassword123!'
+   ```
+
+3. Run the playbook with vault:
+   ```bash
+   ansible-playbook list_ad_users.yml \
+     -e ad_server='dc01.example.com' \
+     -e ad_domain='example.com' \
+     -e user_limit=100 \
+     --ask-vault-pass \
+     -e @ad_secrets.yml
+   ```
+
+### Environment Variables
+
+You can also use environment variables:
+```bash
+export AD_SERVER='dc01.example.com'
+export AD_DOMAIN='example.com'
+export AD_USERNAME='administrator'
+export AD_PASSWORD='YourPassword123!'
+
+ansible-playbook list_ad_users.yml \
+  -e ad_server="$AD_SERVER" \
+  -e ad_domain="$AD_DOMAIN" \
+  -e ad_username="$AD_USERNAME" \
+  -e ad_password="$AD_PASSWORD"
+```
+
+## Example Outputs
+
+### Table Format
+```
+Username             Display Name                   Email                               Department      Title                Status    
+----------------------------------------------------------------------------------------------------------------------------------
+jdoe                 John Doe                       jdoe@example.com                    IT              Systems Admin        Enabled   
+asmith               Alice Smith                    asmith@example.com                  HR              HR Manager           Enabled   
+bwilson              Bob Wilson                     bwilson@example.com                 Finance         Accountant           Disabled  
+```
+
+### Detailed Format
+```
+==========================================
+Username: jdoe
+Display Name: John Doe
+Email: jdoe@example.com
+Department: IT
+Title: Systems Administrator
+Distinguished Name: CN=John Doe,OU=Users,DC=example,DC=com
+Created: 2023-06-01 12:00:00
+Last Logon: 2023-12-01 08:30:15
+Account Status: Enabled
+Groups: Domain Users, IT Staff, Administrators
+```
+
+### CSV Export
+Creates a file like `ad_users_export_2023-12-01_14-30-25.csv`:
 ```csv
-username,display_name,email,enabled,locked,last_login,groups
-jsmith,"John Smith",jsmith@company.com,true,false,2025-01-10T14:30:00Z,"Domain Users;Developers"
+Username,Display Name,Email,Department,Title,Distinguished Name,Created,Account Status,Last Logon
+"jdoe","John Doe","jdoe@example.com","IT","Systems Administrator","CN=John Doe,OU=Users,DC=example,DC=com","2023-06-01 12:00:00","Enabled","2023-12-01 08:30:15"
+"asmith","Alice Smith","asmith@example.com","HR","HR Manager","CN=Alice Smith,OU=Users,DC=example,DC=com","2023-05-15 09:30:00","Enabled","2023-11-30 17:45:22"
 ```
 
-## 🐛 Troubleshooting
+## Key Differences from LDAP Approach
+
+This implementation uses the Microsoft AD collection which provides:
+
+1. **Better Integration**: Native support for Active Directory operations
+2. **Simplified Authentication**: Direct domain authentication without complex LDAP bindings
+3. **Rich Object Properties**: Access to AD-specific attributes and properties
+4. **Error Handling**: Better error messages and handling for AD-specific issues
+5. **Performance**: Optimized queries for Active Directory environments
+
+## Troubleshooting
 
 ### Common Issues
 
-1. **No results returned**: Check your search filter and ensure target hosts are accessible
-2. **Permission errors**: Verify service account has proper AD/LDAP read permissions
-3. **Connection timeouts**: Check network connectivity and WinRM/SSH configuration
-4. **Invalid OU specified**: Ensure organizational unit path is correct
+1. **Collection not found**: Install Microsoft AD collection with `ansible-galaxy collection install microsoft.ad`
+2. **Authentication failure**: Verify username format (use just username, not UPN format)
+3. **Permission denied**: Ensure the user has read permissions on Active Directory
+4. **Connection timeout**: Verify network connectivity to the domain controller
 
 ### Debug Mode
-Enable debug output by adding to job template extra variables:
-```yaml
-debug_output: true
-```
 
-## 🔐 Security Considerations
-
-- Use encrypted credentials in Tower/AWX
-- Limit service account permissions to read-only
-- Consider using vault for sensitive variables
-- Review and audit account access regularly
-
-## 📚 Integration with Agent Framework
-
-This playbook is designed to work with the Ansible Agent tools:
-- `ansible_list_accounts_tool`: Calls this playbook via Tower API
-- Results are parsed and returned to the requesting agent
-- Variables are passed through the Tower job template
-
-### Agent Integration Variables
-When called via the agent framework, additional variables are automatically set:
-- `operation_timestamp`: Current UTC timestamp
-- `requested_by`: Identifier of the requesting agent/user
-- `action`: Always set to "list_accounts"
-
-## 🚀 Advanced Usage
-
-### Custom Attribute Selection
-Modify `include_attributes` to retrieve specific user properties:
-```yaml
-include_attributes:
-  - "sAMAccountName"
-  - "displayName"
-  - "mail"
-  - "department"
-  - "title"
-  - "manager"
-```
-
-### Targeting Specific Domains
-Use Tower's limit functionality to target different domains:
+Run with verbose output for troubleshooting:
 ```bash
-# Job Template Limit field:
-prod_domain_controllers    # For production domain
-test_domain_controllers    # For test domain
+ansible-playbook list_ad_users.yml -vvv \
+  -e ad_server='dc01.example.com' \
+  [other parameters...]
 ```
 
+### Test Connection
+
+Test with a small limit first:
+```bash
+ansible-playbook list_ad_users.yml \
+  -e ad_server='dc01.example.com' \
+  -e ad_domain='example.com' \
+  -e ad_username='administrator' \
+  -e ad_password='YourPassword123!' \
+  -e user_limit=1
+```
+
+## Files
+
+- `list_ad_users.yml` - Main Ansible playbook using Microsoft AD collection
+- `requirements.yml` - Required Ansible collections
+- `run_examples.sh` - Example commands and usage patterns
+- `README.md` - This documentation
+
+## License
+
+This project is provided as-is for educational and operational use. Please ensure compliance with your organization's security policies when using in production environments.
+
+## Microsoft AD Collection Documentation
+
+For more information about the Microsoft AD collection, visit:
+- [Microsoft AD Collection Documentation](https://docs.ansible.com/ansible/latest/collections/microsoft/ad/)
+- [microsoft.ad.user module](https://docs.ansible.com/ansible/latest/collections/microsoft/ad/user_module.html)
+- [microsoft.ad.object module](https://docs.ansible.com/ansible/latest/collections/microsoft/ad/object_module.html)

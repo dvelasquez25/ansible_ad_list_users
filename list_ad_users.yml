@@ -1,0 +1,165 @@
+---
+- name: List Active Directory Users using Microsoft AD Collection
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Command line parameters with defaults
+    ad_server: "{{ ad_server | default('') }}"
+    ad_domain: "{{ ad_domain | default('') }}"
+    ad_username: "{{ ad_username | default('') }}"
+    ad_password: "{{ ad_password | default('') }}"
+    user_limit: "{{ user_limit | default(100) | int }}"
+    output_format: "{{ output_format | default('table') }}"
+    search_base: "{{ search_base | default('') }}"
+    user_filter: "{{ user_filter | default('*') }}"
+    organizational_unit: "{{ organizational_unit | default('') }}"
+    
+  pre_tasks:
+    - name: Validate required parameters
+      fail:
+        msg: "Missing required parameter: {{ item }}"
+      when: vars[item] == ""
+      loop:
+        - ad_server
+        - ad_domain
+        - ad_username
+        - ad_password
+        
+    - name: Display configuration
+      debug:
+        msg:
+          - "AD Server: {{ ad_server }}"
+          - "AD Domain: {{ ad_domain }}"
+          - "Username: {{ ad_username }}"
+          - "User Limit: {{ user_limit }}"
+          - "Output Format: {{ output_format }}"
+          - "User Filter: {{ user_filter }}"
+          - "Search Base: {{ search_base if search_base else 'Domain root' }}"
+          - "Organizational Unit: {{ organizational_unit if organizational_unit else 'All OUs' }}"
+
+  tasks:
+    - name: Get AD users using Microsoft AD collection
+      microsoft.ad.user:
+        name: "{{ user_filter }}"
+        domain_server: "{{ ad_server }}"
+        domain_username: "{{ ad_username }}@{{ ad_domain }}"
+        domain_password: "{{ ad_password }}"
+        path: "{{ search_base if search_base else omit }}"
+        state: present
+      register: ad_users_query
+      failed_when: false
+      
+    # Alternative approach using object module for querying
+    - name: Query AD users with microsoft.ad.object
+      microsoft.ad.object:
+        identity: "{{ search_base if search_base else 'DC=' + ad_domain.split('.') | join(',DC=') }}"
+        domain_server: "{{ ad_server }}"
+        domain_username: "{{ ad_username }}@{{ ad_domain }}"
+        domain_password: "{{ ad_password }}"
+        filter: "(&(objectClass=user)(objectCategory=person){{ ('(name=' + user_filter + ')') if user_filter != '*' else '' }})"
+        properties:
+          - sAMAccountName
+          - displayName
+          - mail
+          - department
+          - title
+          - whenCreated
+          - lastLogon
+          - userAccountControl
+          - memberOf
+          - distinguishedName
+          - enabled
+        search_scope: subtree
+      register: ad_users_result
+      
+    - name: Process and limit user results
+      set_fact:
+        ad_users: "{{ ad_users_result.objects[:user_limit] }}"
+        total_users_found: "{{ ad_users_result.objects | length }}"
+      when: ad_users_result.objects is defined
+        
+    - name: Display user count summary
+      debug:
+        msg:
+          - "Total users found: {{ total_users_found | default(0) }}"
+          - "Users displayed (limited to): {{ ad_users | default([]) | length }}"
+          
+    - name: Display users in table format
+      debug:
+        msg: |
+          {% set header = '%-20s %-30s %-35s %-15s %-20s %-10s' | format('Username', 'Display Name', 'Email', 'Department', 'Title', 'Status') %}
+          {{ header }}
+          {{ '-' * 130 }}
+          {% for user in ad_users %}
+          {% set username = user.sAMAccountName | default('N/A') %}
+          {% set display_name = user.displayName | default('N/A') %}
+          {% set email = user.mail | default('N/A') %}
+          {% set department = user.department | default('N/A') %}
+          {% set title = user.title | default('N/A') %}
+          {% set status = 'Enabled' if user.enabled else 'Disabled' %}
+          {{ '%-20s %-30s %-35s %-15s %-20s %-10s' | format(username[:20], display_name[:30], email[:35], department[:15], title[:20], status) }}
+          {% endfor %}
+      when: 
+        - output_format == 'table'
+        - ad_users is defined
+        - ad_users | length > 0
+      
+    - name: Display users in JSON format
+      debug:
+        var: ad_users
+      when: 
+        - output_format == 'json'
+        - ad_users is defined
+      
+    - name: Display users in detailed format
+      debug:
+        msg:
+          - "=========================================="
+          - "Username: {{ user.sAMAccountName | default('N/A') }}"
+          - "Display Name: {{ user.displayName | default('N/A') }}"
+          - "Email: {{ user.mail | default('N/A') }}"
+          - "Department: {{ user.department | default('N/A') }}"
+          - "Title: {{ user.title | default('N/A') }}"
+          - "Distinguished Name: {{ user.distinguishedName | default('N/A') }}"
+          - "Created: {{ user.whenCreated | default('N/A') }}"
+          - "Last Logon: {{ user.lastLogon | default('N/A') }}"
+          - "Account Status: {{ 'Enabled' if user.enabled else 'Disabled' }}"
+          - "Groups: {{ user.memberOf | join(', ') if user.memberOf is defined and user.memberOf | length > 0 else 'None' }}"
+      loop: "{{ ad_users }}"
+      loop_control:
+        loop_var: user
+        label: "{{ user.sAMAccountName | default('Unknown') }}"
+      when: 
+        - output_format == 'detailed'
+        - ad_users is defined
+        - ad_users | length > 0
+      
+    - name: Create CSV export
+      copy:
+        content: |
+          Username,Display Name,Email,Department,Title,Distinguished Name,Created,Account Status,Last Logon
+          {% for user in ad_users %}
+          "{{ user.sAMAccountName | default('N/A') }}","{{ user.displayName | default('N/A') }}","{{ user.mail | default('N/A') }}","{{ user.department | default('N/A') }}","{{ user.title | default('N/A') }}","{{ user.distinguishedName | default('N/A') }}","{{ user.whenCreated | default('N/A') }}","{{ 'Enabled' if user.enabled else 'Disabled' }}","{{ user.lastLogon | default('N/A') }}"
+          {% endfor %}
+        dest: "./ad_users_export_{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '-') }}.csv"
+      when: 
+        - output_format == 'csv'
+        - ad_users is defined
+        - ad_users | length > 0
+      delegate_to: localhost
+      
+    - name: Display message when no users found
+      debug:
+        msg: "No users found matching the specified criteria."
+      when: 
+        - ad_users is not defined or ad_users | length == 0
+        
+  post_tasks:
+    - name: Summary
+      debug:
+        msg:
+          - "============================================"
+          - "Query completed successfully!"
+          - "Total users in AD: {{ total_users_found | default(0) }}"
+          - "Users retrieved: {{ ad_users | default([]) | length }}"
+          - "{% if output_format == 'csv' and ad_users is defined and ad_users | length > 0 %}Export file: ad_users_export_{{ ansible_date_time.date }}_{{ ansible_date_time.time | replace(':', '-') }}.csv{% endif %}"
